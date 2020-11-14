@@ -90,6 +90,7 @@ def parse_args():
                             help='Split the reference stream on tabs, and expect this many references. Default: %(default)s.')
     arg_parser.add_argument('--encoding', '-e', type=str, default='utf-8',
                             help='open text files with specified encoding (default: %(default)s)')
+    arg_parser.add_argument('--weights', type=str, default=None, help='Weights of sentences')
 
     # Metric selection
     arg_parser.add_argument('--metrics', '-m', choices=METRICS.keys(), nargs='+', default=['bleu'],
@@ -274,9 +275,15 @@ def main():
         inputfh = smart_open(args.input, encoding=args.encoding)
     full_system = inputfh.readlines()
 
+    if args.weights:
+        with open(args.weights) as f:
+            full_sentence_weight_stream = [float(s.rstrip()) for s in f.readlines()]
+    else:
+        full_sentence_weight_stream = [1.0] * len(full_system)
+
     # Filter sentences according to a given origlang
-    system, *refs = filter_subset(
-        [full_system, *full_refs], args.test_set, args.langpair, args.origlang, args.subset)
+    system, sentence_weight_stream, *refs = filter_subset(
+        [full_system, full_sentence_weight_stream, *full_refs], args.test_set, args.langpair, args.origlang, args.subset)
 
     if len(system) == 0:
         message = 'Test set %s contains no sentence' % args.test_set
@@ -303,7 +310,7 @@ def main():
     # Else, handle system level
     for metric in metrics:
         try:
-            score = metric.corpus_score(system, refs)
+            score = metric.corpus_score(system, refs, sentence_weight_stream=sentence_weight_stream)
         except EOFError:
             sacrelogger.error('The input and reference stream(s) were of different lengths.')
             if args.test_set is not None:
@@ -329,7 +336,7 @@ def main():
             elif all(t in SUBSETS for t in args.test_set.split(',')):
                 subsets += COUNTRIES + DOMAINS
             for subset in subsets:
-                system, *refs = filter_subset([full_system, *full_refs], args.test_set, args.langpair, origlang, subset)
+                system, sentence_weight_stream, *refs = filter_subset([full_system, full_sentence_weight_stream, *full_refs], args.test_set, args.langpair, origlang, subset)
                 if len(system) == 0:
                     continue
                 if subset in COUNTRIES:
@@ -345,7 +352,7 @@ def main():
                     elif metric.name == 'chrf':
                         _refs = refs[0]
 
-                    score = metric.corpus_score(system, _refs)
+                    score = metric.corpus_score(system, _refs, sentence_weight_stream=sentence_weight_stream)
                     print('origlang={} {}: sentences={:{}} {}={:{}.{}f}'.format(
                         origlang, subset_str, len(system), sents_digits,
                         score.prefix, score.score, width+4, width))

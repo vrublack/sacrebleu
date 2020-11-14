@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-
+import itertools
 import math
 import logging
 from collections import Counter
@@ -51,7 +51,7 @@ class BLEUScore(BaseScore):
 
         prefix = "{}+{}".format(self.prefix, signature) if signature else self.prefix
 
-        s = '{pr} = {sc:.{w}f} {prec} (BP = {bp:.3f} ratio = {r:.3f} hyp_len = {sl:d} ref_len = {rl:d})'.format(
+        s = '{pr} = {sc:.{w}f} {prec} (BP = {bp:.3f} ratio = {r:.3f} hyp_len = {sl} ref_len = {rl})'.format(
             pr=prefix,
             sc=self.score,
             w=width,
@@ -136,10 +136,10 @@ class BLEU:
         return ngrams, closest_diff, closest_len
 
     @staticmethod
-    def compute_bleu(correct: List[int],
-                     total: List[int],
-                     sys_len: int,
-                     ref_len: int,
+    def compute_bleu(correct: List[float],
+                     total: List[float],
+                     sys_len: float,
+                     ref_len: float,
                      smooth_method: str = 'none',
                      smooth_value=None,
                      use_effective_order=False) -> BLEUScore:
@@ -230,7 +230,8 @@ class BLEU:
 
     def corpus_score(self, sys_stream: Union[str, Iterable[str]],
                      ref_streams: Union[str, List[Iterable[str]]],
-                     use_effective_order: bool = False) -> BLEUScore:
+                     use_effective_order: bool = False,
+                     sentence_weight_stream: Union[float, List[Iterable[float]]] = None) -> BLEUScore:
         """Produces BLEU scores along with its sufficient statistics from a source against one or more references.
 
         :param sys_stream: The system stream (a sequence of segments)
@@ -246,6 +247,11 @@ class BLEU:
         if isinstance(ref_streams, str):
             ref_streams = [[ref_streams]]
 
+        if isinstance(sentence_weight_stream, float):
+            sentence_weight_stream = [sentence_weight_stream]
+        elif sentence_weight_stream is None:
+            sentence_weight_stream = itertools.cycle([1])
+
         sys_len = 0
         ref_len = 0
 
@@ -256,7 +262,7 @@ class BLEU:
         tokenized_count = 0
 
         fhs = [sys_stream] + ref_streams
-        for lines in zip_longest(*fhs):
+        for lines, weight in zip(zip_longest(*fhs), sentence_weight_stream):
             if None in lines:
                 raise EOFError("Source and reference streams have different lengths!")
 
@@ -276,14 +282,18 @@ class BLEU:
             output_len = len(output.split())
             ref_ngrams, closest_diff, closest_len = BLEU.reference_stats(refs, output_len)
 
-            sys_len += output_len
-            ref_len += closest_len
+            sys_len += output_len * weight
+            ref_len += closest_len * weight
 
             sys_ngrams = BLEU.extract_ngrams(output)
             for ngram in sys_ngrams.keys():
                 n = len(ngram.split())
-                correct[n-1] += min(sys_ngrams[ngram], ref_ngrams.get(ngram, 0))
-                total[n-1] += sys_ngrams[ngram]
+                correct[n-1] += min(sys_ngrams[ngram], ref_ngrams.get(ngram, 0)) * weight
+                total[n-1] += sys_ngrams[ngram] * weight
+
+        # TODO handle zero denominator better
+        if ref_len == 0:
+            ref_len = 1
 
         # Get BLEUScore object
         score = self.compute_bleu(

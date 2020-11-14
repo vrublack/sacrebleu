@@ -134,7 +134,8 @@ class CHRF:
         return self.compute_chrf(stats, self.order, self.beta)
 
     def corpus_score(self, sys_stream: Union[str, Iterable[str]],
-                     ref_streams: Union[str, List[Iterable[str]]]) -> CHRFScore:
+                     ref_streams: Union[str, List[Iterable[str]]],
+                     sentence_weight_stream=None) -> CHRFScore:
         """
         Computes Chrf on a corpus.
 
@@ -142,6 +143,9 @@ class CHRF:
         :param references: Stream of references.
         :return: Chrf score.
         """
+
+        if sentence_weight_stream and set(sentence_weight_stream) != {1.0}:
+            raise NotImplementedError('Sentence weights not implemented for this metric')
 
         # Add some robustness to the input arguments
         if isinstance(sys_stream, str):

@@ -111,7 +111,12 @@ class TER:
         self.signature = TERSignature(args)
 
     def corpus_score(self, sys_stream: Union[str, Iterable[str]],
-                     ref_streams: Union[str, List[Iterable[str]]]) -> TERScore:
+                     ref_streams: Union[str, List[Iterable[str]]],
+                     sentence_weight_stream=None) -> TERScore:
+
+        if sentence_weight_stream and set(sentence_weight_stream) != {1.0}:
+            raise NotImplementedError('Sentence weights not implemented for this metric')
+
         # Add some robustness to the input arguments
         if isinstance(sys_stream, str):
             sys_stream = [sys_stream]
